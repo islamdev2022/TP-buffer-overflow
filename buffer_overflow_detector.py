@@ -1,9 +1,15 @@
 import sys
-import platform
-import psutil
 import time
-from typing import Any, List, Dict, Union
-from colorama import init, Fore, Style
+import customtkinter as ctk
+from tkinter import messagebox
+import platform
+from colorama import Fore, Style,init
+import psutil
+from typing import Dict, Any, List, Union
+
+# Set appearance mode and theme
+ctk.set_appearance_mode("System")  # Modes: System, Dark, Light
+ctk.set_default_color_theme("blue")  # Themes: blue, green, dark-blue
 
 # Initialize colorama for colored terminal output
 init()
@@ -373,231 +379,545 @@ class BufferOverflowDetector:
             
         return result
 
-def format_result(result: Dict[str, Any]) -> str:
-    """
-    Formats a result dictionary into a readable string with color.
-    
-    Args:
-        result: The result dictionary from a check method
-        
-    Returns:
-        Formatted string with color-coded status
-    """
-    output = ""
-    
-    if result["overflow"]:
-        output += f"{Fore.RED}[OVERFLOW DÉTECTÉ]{Style.RESET_ALL} "
-        output += result["message"]
-    else:
-        output += f"{Fore.GREEN}[OK]{Style.RESET_ALL} "
-        
-        if "value" in result:
-            output += f"Valeur: {result['value']}"
-        elif "size" in result:
-            output += f"Taille: {result['size']}/{result['max_allowed']}"
-        elif "dimensions" in result:
-            dims = result["dimensions"]
-            max_dims = result["max_allowed"]
-            output += f"Dimensions: {dims['rows']}x{dims['cols']} (max: {max_dims['rows']}x{max_dims['cols']})"
-        elif "memory_info" in result:
-            mem = result["memory_info"]
-            output += f"Mémoire: {mem['percent']:.1f}% utilisée ({mem['used_gb']:.2f}/{mem['total_gb']:.2f} GB)"
-        elif "disk_info" in result:
-            disk = result["disk_info"]
-            output += f"Disque ({disk['path']}): {disk['percent']:.1f}% utilisé ({disk['used_gb']:.2f}/{disk['total_gb']:.2f} GB)"
-    
-    return output
 
-def get_user_input():
-    """Gets user input for testing different overflow scenarios"""
-    print(f"\n{Fore.CYAN}=== Détecteur de Dépassement de Tampon ===={Style.RESET_ALL}")
-    print("Choisissez une option à tester:")
-    print("1. Caractère et chaîne de caractères")
-    print("2. Entiers, réels et doubles")
-    print("3. Tableaux et matrices")
-    print("4. Listes et piles")
-    print("5. Mémoire (RAM, disque dur, disque amovible)")
-    print("6. Simulation de dépassement de tampon")
-    print("7. Quitter")
+class BufferOverflowDetectorGUI(ctk.CTk):
+    def __init__(self, detector):
+        super().__init__()
+        
+        # Store the detector instance
+        self.detector = detector
+        
+        # Configure window
+        self.title("Détecteur de Dépassement de Tampon")
+        self.geometry("900x600")
+        
+        # Create sidebar frame
+        self.sidebar_frame = ctk.CTkFrame(self, width=200, corner_radius=0)
+        self.sidebar_frame.pack(side="left", fill="y", padx=0, pady=0)
+        
+        # Create main content frame
+        self.main_frame = ctk.CTkFrame(self, corner_radius=0)
+        self.main_frame.pack(side="right", fill="both", expand=True, padx=0, pady=0)
+        
+        # Create title label
+        self.title_label = ctk.CTkLabel(self.sidebar_frame, text="Options de test", font=ctk.CTkFont(size=16, weight="bold"))
+        self.title_label.pack(padx=20, pady=(20, 10))
+        
+        # Create sidebar buttons
+        self.sidebar_buttons = []
+        
+        # Add buttons for each test type
+        test_options = [
+            ("Caractère et chaîne", self.show_character_string_test),
+            ("Entiers et réels", self.show_numbers_test),
+            ("Tableaux et matrices", self.show_arrays_matrices_test),
+            ("Listes et piles", self.show_lists_stacks_test),
+            ("Mémoire", self.show_memory_test),
+            ("Simulation dépassement", self.show_buffer_overflow_simulation)
+        ]
+        
+        for text, command in test_options:
+            button = ctk.CTkButton(self.sidebar_frame, text=text, command=command)
+            button.pack(padx=20, pady=10, fill="x")
+            self.sidebar_buttons.append(button)
+        
+        # Create appearance mode selector
+        self.appearance_label = ctk.CTkLabel(self.sidebar_frame, text="Apparence:", anchor="w")
+        self.appearance_label.pack(padx=20, pady=(20, 0))
+        self.appearance_option = ctk.CTkOptionMenu(self.sidebar_frame, values=["System", "Dark", "Light"],
+                                                   command=self.change_appearance_mode)
+        self.appearance_option.pack(padx=20, pady=(10, 20))
+        
+        # Create results text area
+        self.result_frame = ctk.CTkFrame(self.main_frame)
+        self.result_frame.pack(padx=20, pady=20, fill="both", expand=True)
+        
+        self.result_label = ctk.CTkLabel(self.result_frame, text="Résultats", font=ctk.CTkFont(size=16, weight="bold"))
+        self.result_label.pack(padx=10, pady=10)
+        
+        self.results_text = ctk.CTkTextbox(self.result_frame, wrap="word", font=ctk.CTkFont(size=12))
+        self.results_text.pack(padx=10, pady=10, fill="both", expand=True)
+        
+        # Create content frames for each test (initially hidden)
+        self.character_string_frame = self.create_character_string_frame()
+        self.numbers_frame = self.create_numbers_frame()
+        self.arrays_matrices_frame = self.create_arrays_matrices_frame()
+        self.lists_stacks_frame = self.create_lists_stacks_frame()
+        self.memory_frame = self.create_memory_frame()
+        self.buffer_overflow_frame = self.create_buffer_overflow_frame()
+        
+        # Show the first test by default
+        self.show_character_string_test()
     
-    choice = input("Entrez le numéro de l'option: ")
+    def change_appearance_mode(self, new_appearance_mode):
+        ctk.set_appearance_mode(new_appearance_mode)
     
-    try:
-        return int(choice)
-    except ValueError:
-        print(f"{Fore.RED}Entrée invalide. Veuillez entrer un nombre entre 1 et 7.{Style.RESET_ALL}")
-        return 0
+    def hide_all_content_frames(self):
+        for frame in [self.character_string_frame, self.numbers_frame, self.arrays_matrices_frame,
+                      self.lists_stacks_frame, self.memory_frame, self.buffer_overflow_frame]:
+            frame.pack_forget()
+    
+    def show_character_string_test(self):
+        self.hide_all_content_frames()
+        self.character_string_frame.pack(padx=20, pady=20, fill="both", expand=True)
+    
+    def show_numbers_test(self):
+        self.hide_all_content_frames()
+        self.numbers_frame.pack(padx=20, pady=20, fill="both", expand=True)
+    
+    def show_arrays_matrices_test(self):
+        self.hide_all_content_frames()
+        self.arrays_matrices_frame.pack(padx=20, pady=20, fill="both", expand=True)
+    
+    def show_lists_stacks_test(self):
+        self.hide_all_content_frames()
+        self.lists_stacks_frame.pack(padx=20, pady=20, fill="both", expand=True)
+    
+    def show_memory_test(self):
+        self.hide_all_content_frames()
+        self.memory_frame.pack(padx=20, pady=20, fill="both", expand=True)
+    
+    def show_buffer_overflow_simulation(self):
+        self.hide_all_content_frames()
+        self.buffer_overflow_frame.pack(padx=20, pady=20, fill="both", expand=True)
+    
+    def append_result(self, text):
+        self.results_text.insert("end", text + "\n\n")
+        self.results_text.see("end")
+    
+    def format_result_gui(self, result):
+        """Format result for GUI display"""
+        output = ""
+        
+        if result["overflow"]:
+            output += "[OVERFLOW DÉTECTÉ] "
+            output += result["message"]
+        else:
+            output += "[OK] "
+            
+            if "value" in result:
+                output += f"Valeur: {result['value']}"
+            elif "size" in result:
+                output += f"Taille: {result['size']}/{result['max_allowed']}"
+            elif "dimensions" in result:
+                dims = result["dimensions"]
+                max_dims = result["max_allowed"]
+                output += f"Dimensions: {dims['rows']}x{dims['cols']} (max: {max_dims['rows']}x{max_dims['cols']})"
+            elif "memory_info" in result:
+                mem = result["memory_info"]
+                output += f"Mémoire: {mem['percent']:.1f}% utilisée ({mem['used_gb']:.2f}/{mem['total_gb']:.2f} GB)"
+            elif "disk_info" in result:
+                disk = result["disk_info"]
+                output += f"Disque ({disk['path']}): {disk['percent']:.1f}% utilisé ({disk['used_gb']:.2f}/{disk['total_gb']:.2f} GB)"
+        
+        return output
+    
+    def create_character_string_frame(self):
+        frame = ctk.CTkFrame(self.main_frame)
+        
+        # Character test
+        char_label = ctk.CTkLabel(frame, text="Test de caractère", font=ctk.CTkFont(size=14, weight="bold"))
+        char_label.pack(padx=10, pady=10, anchor="w")
+        
+        char_input_frame = ctk.CTkFrame(frame)
+        char_input_frame.pack(padx=10, pady=5, fill="x")
+        
+        char_input_label = ctk.CTkLabel(char_input_frame, text="Entrez un caractère:")
+        char_input_label.pack(side="left", padx=10)
+        
+        self.char_input = ctk.CTkEntry(char_input_frame, width=100)
+        self.char_input.pack(side="left", padx=10)
+        
+        char_test_button = ctk.CTkButton(char_input_frame, text="Tester", command=self.test_character)
+        char_test_button.pack(side="left", padx=10)
+        
+        # String test
+        string_label = ctk.CTkLabel(frame, text="Test de chaîne de caractères", font=ctk.CTkFont(size=14, weight="bold"))
+        string_label.pack(padx=10, pady=(20, 10), anchor="w")
+        
+        string_max_frame = ctk.CTkFrame(frame)
+        string_max_frame.pack(padx=10, pady=5, fill="x")
+        
+        string_max_label = ctk.CTkLabel(string_max_frame, text="Longueur maximale:")
+        string_max_label.pack(side="left", padx=10)
+        
+        self.string_max_input = ctk.CTkEntry(string_max_frame, width=100)
+        self.string_max_input.pack(side="left", padx=10)
+        self.string_max_input.insert(0, "255")
+        
+        string_input_frame = ctk.CTkFrame(frame)
+        string_input_frame.pack(padx=10, pady=5, fill="x")
+        
+        string_input_label = ctk.CTkLabel(string_input_frame, text="Entrez une chaîne:")
+        string_input_label.pack(side="left", padx=10)
+        
+        self.string_input = ctk.CTkEntry(string_input_frame, width=300)
+        self.string_input.pack(side="left", padx=10)
+        
+        string_test_button = ctk.CTkButton(string_input_frame, text="Tester", command=self.test_string)
+        string_test_button.pack(side="left", padx=10)
+        
+        return frame
+    
+    def create_numbers_frame(self):
+        frame = ctk.CTkFrame(self.main_frame)
+        
+        # Integer test
+        int_label = ctk.CTkLabel(frame, text="Test d'entier", font=ctk.CTkFont(size=14, weight="bold"))
+        int_label.pack(padx=10, pady=10, anchor="w")
+        
+        int_input_frame = ctk.CTkFrame(frame)
+        int_input_frame.pack(padx=10, pady=5, fill="x")
+        
+        int_input_label = ctk.CTkLabel(int_input_frame, text="Entrez un entier:")
+        int_input_label.pack(side="left", padx=10)
+        
+        self.int_input = ctk.CTkEntry(int_input_frame, width=200)
+        self.int_input.pack(side="left", padx=10)
+        
+        int_test_button = ctk.CTkButton(int_input_frame, text="Tester", command=self.test_integer)
+        int_test_button.pack(side="left", padx=10)
+        
+        # Float test
+        float_label = ctk.CTkLabel(frame, text="Test de nombre réel/double", font=ctk.CTkFont(size=14, weight="bold"))
+        float_label.pack(padx=10, pady=(20, 10), anchor="w")
+        
+        float_input_frame = ctk.CTkFrame(frame)
+        float_input_frame.pack(padx=10, pady=5, fill="x")
+        
+        float_input_label = ctk.CTkLabel(float_input_frame, text="Entrez un nombre réel:")
+        float_input_label.pack(side="left", padx=10)
+        
+        self.float_input = ctk.CTkEntry(float_input_frame, width=200)
+        self.float_input.pack(side="left", padx=10)
+        
+        float_test_button = ctk.CTkButton(float_input_frame, text="Tester", command=self.test_float)
+        float_test_button.pack(side="left", padx=10)
+        
+        return frame
+    
+    def create_arrays_matrices_frame(self):
+        frame = ctk.CTkFrame(self.main_frame)
+        
+        # Array test
+        array_label = ctk.CTkLabel(frame, text="Test de tableau", font=ctk.CTkFont(size=14, weight="bold"))
+        array_label.pack(padx=10, pady=10, anchor="w")
+        
+        array_max_frame = ctk.CTkFrame(frame)
+        array_max_frame.pack(padx=10, pady=5, fill="x")
+        
+        array_max_label = ctk.CTkLabel(array_max_frame, text="Taille maximale:")
+        array_max_label.pack(side="left", padx=10)
+        
+        self.array_max_input = ctk.CTkEntry(array_max_frame, width=100)
+        self.array_max_input.pack(side="left", padx=10)
+        self.array_max_input.insert(0, "10")
+        
+        array_size_frame = ctk.CTkFrame(frame)
+        array_size_frame.pack(padx=10, pady=5, fill="x")
+        
+        array_size_label = ctk.CTkLabel(array_size_frame, text="Taille du tableau à tester:")
+        array_size_label.pack(side="left", padx=10)
+        
+        self.array_size_input = ctk.CTkEntry(array_size_frame, width=100)
+        self.array_size_input.pack(side="left", padx=10)
+        
+        array_test_button = ctk.CTkButton(array_size_frame, text="Tester", command=self.test_array)
+        array_test_button.pack(side="left", padx=10)
+        
+        # Matrix test
+        matrix_label = ctk.CTkLabel(frame, text="Test de matrice", font=ctk.CTkFont(size=14, weight="bold"))
+        matrix_label.pack(padx=10, pady=(20, 10), anchor="w")
+        
+        matrix_max_frame = ctk.CTkFrame(frame)
+        matrix_max_frame.pack(padx=10, pady=5, fill="x")
+        
+        matrix_max_rows_label = ctk.CTkLabel(matrix_max_frame, text="Nombre max de lignes:")
+        matrix_max_rows_label.pack(side="left", padx=10)
+        
+        self.matrix_max_rows_input = ctk.CTkEntry(matrix_max_frame, width=80)
+        self.matrix_max_rows_input.pack(side="left", padx=10)
+        self.matrix_max_rows_input.insert(0, "5")
+        
+        matrix_max_cols_label = ctk.CTkLabel(matrix_max_frame, text="Nombre max de colonnes:")
+        matrix_max_cols_label.pack(side="left", padx=10)
+        
+        self.matrix_max_cols_input = ctk.CTkEntry(matrix_max_frame, width=80)
+        self.matrix_max_cols_input.pack(side="left", padx=10)
+        self.matrix_max_cols_input.insert(0, "5")
+        
+        matrix_size_frame = ctk.CTkFrame(frame)
+        matrix_size_frame.pack(padx=10, pady=5, fill="x")
+        
+        matrix_rows_label = ctk.CTkLabel(matrix_size_frame, text="Nombre de lignes à tester:")
+        matrix_rows_label.pack(side="left", padx=10)
+        
+        self.matrix_rows_input = ctk.CTkEntry(matrix_size_frame, width=80)
+        self.matrix_rows_input.pack(side="left", padx=10)
+        
+        matrix_cols_label = ctk.CTkLabel(matrix_size_frame, text="Nombre de colonnes à tester:")
+        matrix_cols_label.pack(side="left", padx=10)
+        
+        self.matrix_cols_input = ctk.CTkEntry(matrix_size_frame, width=80)
+        self.matrix_cols_input.pack(side="left", padx=10)
+        
+        matrix_test_button = ctk.CTkButton(matrix_size_frame, text="Tester", command=self.test_matrix)
+        matrix_test_button.pack(side="left", padx=10)
+        
+        return frame
+    
+    def create_lists_stacks_frame(self):
+        frame = ctk.CTkFrame(self.main_frame)
+        
+        # List test
+        list_label = ctk.CTkLabel(frame, text="Test de liste", font=ctk.CTkFont(size=14, weight="bold"))
+        list_label.pack(padx=10, pady=10, anchor="w")
+        
+        list_max_frame = ctk.CTkFrame(frame)
+        list_max_frame.pack(padx=10, pady=5, fill="x")
+        
+        list_max_label = ctk.CTkLabel(list_max_frame, text="Taille maximale:")
+        list_max_label.pack(side="left", padx=10)
+        
+        self.list_max_input = ctk.CTkEntry(list_max_frame, width=100)
+        self.list_max_input.pack(side="left", padx=10)
+        self.list_max_input.insert(0, "10")
+        
+        list_size_frame = ctk.CTkFrame(frame)
+        list_size_frame.pack(padx=10, pady=5, fill="x")
+        
+        list_size_label = ctk.CTkLabel(list_size_frame, text="Taille de la liste à tester:")
+        list_size_label.pack(side="left", padx=10)
+        
+        self.list_size_input = ctk.CTkEntry(list_size_frame, width=100)
+        self.list_size_input.pack(side="left", padx=10)
+        
+        list_test_button = ctk.CTkButton(list_size_frame, text="Tester", command=self.test_list)
+        list_test_button.pack(side="left", padx=10)
+        
+        # Stack test
+        stack_label = ctk.CTkLabel(frame, text="Test de pile", font=ctk.CTkFont(size=14, weight="bold"))
+        stack_label.pack(padx=10, pady=(20, 10), anchor="w")
+        
+        stack_max_frame = ctk.CTkFrame(frame)
+        stack_max_frame.pack(padx=10, pady=5, fill="x")
+        
+        stack_max_label = ctk.CTkLabel(stack_max_frame, text="Taille maximale:")
+        stack_max_label.pack(side="left", padx=10)
+        
+        self.stack_max_input = ctk.CTkEntry(stack_max_frame, width=100)
+        self.stack_max_input.pack(side="left", padx=10)
+        self.stack_max_input.insert(0, "10")
+        
+        stack_size_frame = ctk.CTkFrame(frame)
+        stack_size_frame.pack(padx=10, pady=5, fill="x")
+        
+        stack_size_label = ctk.CTkLabel(stack_size_frame, text="Taille de la pile à tester:")
+        stack_size_label.pack(side="left", padx=10)
+        
+        self.stack_size_input = ctk.CTkEntry(stack_size_frame, width=100)
+        self.stack_size_input.pack(side="left", padx=10)
+        
+        stack_test_button = ctk.CTkButton(stack_size_frame, text="Tester", command=self.test_stack)
+        stack_test_button.pack(side="left", padx=10)
+        
+        return frame
+    
+    def create_memory_frame(self):
+        frame = ctk.CTkFrame(self.main_frame)
+        
+        # Memory test
+        memory_label = ctk.CTkLabel(frame, text="Test de mémoire", font=ctk.CTkFont(size=14, weight="bold"))
+        memory_label.pack(padx=10, pady=10, anchor="w")
+        
+        memory_test_button = ctk.CTkButton(frame, text="Tester la mémoire RAM", command=self.test_memory)
+        memory_test_button.pack(padx=10, pady=10)
+        
+        # Disk test
+        disk_label = ctk.CTkLabel(frame, text="Test de disque dur", font=ctk.CTkFont(size=14, weight="bold"))
+        disk_label.pack(padx=10, pady=(20, 10), anchor="w")
+        
+        disk_frame = ctk.CTkFrame(frame)
+        disk_frame.pack(padx=10, pady=5, fill="x")
+        
+        disk_path_label = ctk.CTkLabel(disk_frame, text="Chemin du disque:")
+        disk_path_label.pack(side="left", padx=10)
+        
+        self.disk_path_input = ctk.CTkEntry(disk_frame, width=200)
+        self.disk_path_input.pack(side="left", padx=10)
+        # Set appropriate root directory based on OS
+        root_dir = "C:\\" if platform.system() == "Windows" else "/"
+        self.disk_path_input.insert(0, root_dir)
+        
+        disk_test_button = ctk.CTkButton(disk_frame, text="Tester", command=self.test_disk)
+        disk_test_button.pack(side="left", padx=10)
+        
+        # Removable drives test
+        removable_label = ctk.CTkLabel(frame, text="Test de disques amovibles", font=ctk.CTkFont(size=14, weight="bold"))
+        removable_label.pack(padx=10, pady=(20, 10), anchor="w")
+        
+        removable_test_button = ctk.CTkButton(frame, text="Tester les disques amovibles", command=self.test_removable_drives)
+        removable_test_button.pack(padx=10, pady=10)
+        
+        return frame
+    
+    def create_buffer_overflow_frame(self):
+        frame = ctk.CTkFrame(self.main_frame)
+        
+        # Buffer overflow simulation
+        buffer_label = ctk.CTkLabel(frame, text="Simulation de dépassement de tampon", 
+                                    font=ctk.CTkFont(size=14, weight="bold"))
+        buffer_label.pack(padx=10, pady=10, anchor="w")
+        
+        buffer_info = ctk.CTkLabel(frame, text="Cette simulation va tenter d'allouer un tableau de grande taille en mémoire.\n"
+                                              "Un dépassement se produira si la mémoire est insuffisante.")
+        buffer_info.pack(padx=10, pady=10)
+        
+        buffer_frame = ctk.CTkFrame(frame)
+        buffer_frame.pack(padx=10, pady=5, fill="x")
+        
+        buffer_size_label = ctk.CTkLabel(buffer_frame, text="Taille du tableau à allouer:")
+        buffer_size_label.pack(side="left", padx=10)
+        
+        self.buffer_size_input = ctk.CTkEntry(buffer_frame, width=200)
+        self.buffer_size_input.pack(side="left", padx=10)
+        self.buffer_size_input.insert(0, "100000000")
+        
+        buffer_test_button = ctk.CTkButton(buffer_frame, text="Tester", command=self.test_buffer_overflow)
+        buffer_test_button.pack(side="left", padx=10)
+        
+        return frame
+    
+    # Test methods
+    def test_character(self):
+        try:
+            char = self.char_input.get()
+            result = self.detector.check_character(char)
+            self.append_result(f"Test de caractère: {self.format_result_gui(result)}")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de caractère: {str(e)}")
+    
+    def test_string(self):
+        try:
+            string = self.string_input.get()
+            max_length = int(self.string_max_input.get())
+            result = self.detector.check_string(string, max_length)
+            self.append_result(f"Test de chaîne: {self.format_result_gui(result)}")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de chaîne: {str(e)}")
+    
+    def test_integer(self):
+        try:
+            value = int(self.int_input.get())
+            result = self.detector.check_number(value, is_integer=True)
+            self.append_result(f"Test d'entier: {self.format_result_gui(result)}")
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer un entier valide.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test d'entier: {str(e)}")
+    
+    def test_float(self):
+        try:
+            value = float(self.float_input.get())
+            result = self.detector.check_number(value, is_integer=False)
+            self.append_result(f"Test de nombre réel: {self.format_result_gui(result)}")
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer un nombre réel valide.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de nombre réel: {str(e)}")
+    
+    def test_array(self):
+        try:
+            size = int(self.array_max_input.get())
+            test_size = int(self.array_size_input.get())
+            test_array = [0] * test_size
+            result = self.detector.check_array(test_array, size)
+            self.append_result(f"Test de tableau: {self.format_result_gui(result)}")
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer des tailles valides.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de tableau: {str(e)}")
+    
+    def test_matrix(self):
+        try:
+            max_rows = int(self.matrix_max_rows_input.get())
+            max_cols = int(self.matrix_max_cols_input.get())
+            test_rows = int(self.matrix_rows_input.get())
+            test_cols = int(self.matrix_cols_input.get())
+            test_matrix = [[0 for _ in range(test_cols)] for _ in range(test_rows)]
+            result = self.detector.check_matrix(test_matrix, max_rows, max_cols)
+            self.append_result(f"Test de matrice: {self.format_result_gui(result)}")
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer des dimensions valides.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de matrice: {str(e)}")
+    
+    def test_list(self):
+        try:
+            max_size = int(self.list_max_input.get())
+            test_size = int(self.list_size_input.get())
+            test_list = [0] * test_size
+            result = self.detector.check_list(test_list, max_size)
+            self.append_result(f"Test de liste: {self.format_result_gui(result)}")
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer des tailles valides.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de liste: {str(e)}")
+    
+    def test_stack(self):
+        try:
+            max_size = int(self.stack_max_input.get())
+            test_size = int(self.stack_size_input.get())
+            test_stack = [0] * test_size
+            result = self.detector.check_stack(test_stack, max_size)
+            self.append_result(f"Test de pile: {self.format_result_gui(result)}")
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer des tailles valides.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de pile: {str(e)}")
+    
+    def test_memory(self):
+        try:
+            result = self.detector.check_memory_usage()
+            self.append_result(f"Test de mémoire RAM: {self.format_result_gui(result)}")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de mémoire: {str(e)}")
+    
+    def test_disk(self):
+        try:
+            path = self.disk_path_input.get()
+            result = self.detector.check_disk_usage(path)
+            self.append_result(f"Test de disque: {self.format_result_gui(result)}")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de disque: {str(e)}")
+    
+    def test_removable_drives(self):
+        try:
+            result = self.detector.check_removable_drives()
+            self.append_result(f"Test de disques amovibles: {len(result['drives'])} disque(s) détecté(s)")
+            if result["drives"]:
+                for drive in result["drives"]:
+                    self.append_result(f"- {drive['device']}: {drive['percent']:.1f}% utilisé, {drive['free_gb']:.2f} GB libre")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors du test de disques amovibles: {str(e)}")
+    
+    def test_buffer_overflow(self):
+        try:
+            size = int(self.buffer_size_input.get())
+            result = self.detector.simulate_buffer_overflow(size)
+            self.append_result(f"Simulation de dépassement: {self.format_result_gui(result)}")
+        except ValueError:
+            messagebox.showerror("Erreur", "Veuillez entrer une taille valide.")
+        except Exception as e:
+            messagebox.showerror("Erreur", f"Erreur lors de la simulation: {str(e)}")
 
-def test_character_and_string(detector):
-    """Tests character and string overflow detection"""
-    print(f"\n{Fore.YELLOW}=== Test de caractère et chaîne de caractères ==={Style.RESET_ALL}")
-    
-    # Test character
-    char = input("Entrez un caractère: ")
-    result = detector.check_character(char)
-    print(format_result(result))
-    
-    # Test string
-    max_length = input("Entrez la longueur maximale pour la chaîne (ou appuyez sur Entrée pour la valeur par défaut 255): ")
-    max_length = int(max_length) if max_length.strip() else 255
-    
-    string = input(f"Entrez une chaîne de caractères (max suggéré: {max_length}): ")
-    result = detector.check_string(string, max_length)
-    print(format_result(result))
-
-def test_numbers(detector):
-    """Tests number overflow detection"""
-    print(f"\n{Fore.YELLOW}=== Test d'entiers, réels et doubles ==={Style.RESET_ALL}")
-    
-    print("\nTest d'entier:")
-    try:
-        value = int(input("Entrez un entier (essayez une très grande valeur): "))
-        result = detector.check_number(value, is_integer=True)
-        print(format_result(result))
-    except ValueError:
-        print(f"{Fore.RED}Entrée invalide pour un entier.{Style.RESET_ALL}")
-    
-    print("\nTest de nombre réel/double:")
-    try:
-        value = float(input("Entrez un nombre réel/double (essayez une très grande valeur): "))
-        result = detector.check_number(value, is_integer=False)
-        print(format_result(result))
-    except ValueError:
-        print(f"{Fore.RED}Entrée invalide pour un nombre réel.{Style.RESET_ALL}")
-
-def test_arrays_and_matrices(detector):
-    """Tests array and matrix overflow detection"""
-    print(f"\n{Fore.YELLOW}=== Test de tableaux et matrices ==={Style.RESET_ALL}")
-    
-    # Test array
-    print("\nTest de tableau:")
-    try:
-        size = int(input("Entrez la taille maximale du tableau: "))
-        test_size = int(input(f"Entrez la taille du tableau à tester (essayez > {size}): "))
-        
-        # Create an array of the specified size
-        test_array = [0] * test_size
-        
-        result = detector.check_array(test_array, size)
-        print(format_result(result))
-    except ValueError:
-        print(f"{Fore.RED}Entrée invalide pour la taille du tableau.{Style.RESET_ALL}")
-    
-    # Test matrix
-    print("\nTest de matrice:")
-    try:
-        max_rows = int(input("Entrez le nombre maximum de lignes: "))
-        max_cols = int(input("Entrez le nombre maximum de colonnes: "))
-        
-        test_rows = int(input(f"Entrez le nombre de lignes à tester (essayez > {max_rows}): "))
-        test_cols = int(input(f"Entrez le nombre de colonnes à tester (essayez > {max_cols}): "))
-        
-        # Create a matrix of the specified dimensions
-        test_matrix = [[0 for _ in range(test_cols)] for _ in range(test_rows)]
-        
-        result = detector.check_matrix(test_matrix, max_rows, max_cols)
-        print(format_result(result))
-    except ValueError:
-        print(f"{Fore.RED}Entrée invalide pour les dimensions de la matrice.{Style.RESET_ALL}")
-
-def test_lists_and_stacks(detector):
-    """Tests list and stack overflow detection"""
-    print(f"\n{Fore.YELLOW}=== Test de listes et piles ==={Style.RESET_ALL}")
-    
-    # Test list
-    print("\nTest de liste:")
-    try:
-        max_size = int(input("Entrez la taille maximale de la liste: "))
-        test_size = int(input(f"Entrez la taille de la liste à tester (essayez > {max_size}): "))
-        
-        # Create a list of the specified size
-        test_list = [0] * test_size
-        
-        result = detector.check_list(test_list, max_size)
-        print(format_result(result))
-    except ValueError:
-        print(f"{Fore.RED}Entrée invalide pour la taille de la liste.{Style.RESET_ALL}")
-    
-    # Test stack
-    print("\nTest de pile:")
-    try:
-        max_size = int(input("Entrez la taille maximale de la pile: "))
-        test_size = int(input(f"Entrez la taille de la pile à tester (essayez > {max_size}): "))
-        
-        # Create a stack of the specified size
-        test_stack = [0] * test_size
-        
-        result = detector.check_stack(test_stack, max_size)
-        print(format_result(result))
-    except ValueError:
-        print(f"{Fore.RED}Entrée invalide pour la taille de la pile.{Style.RESET_ALL}")
-
-def test_memory(detector):
-    """Tests memory usage detection"""
-    print(f"\n{Fore.YELLOW}=== Test de mémoire (RAM, disque dur, disque amovible) ==={Style.RESET_ALL}")
-    
-    # Check RAM
-    print("\nTest de la mémoire RAM:")
-    result = detector.check_memory_usage()
-    print(format_result(result))
-    
-    # Check disk
-    print("\nTest du disque dur:")
-    # Get appropriate root directory based on OS
-    root_dir = "C:\\" if platform.system() == "Windows" else "/"
-    result = detector.check_disk_usage(root_dir)
-    print(format_result(result))
-    
-    # Check removable drives
-    print("\nTest des disques amovibles:")
-    result = detector.check_removable_drives()
-    if result["drives"]:
-        print(format_result(result))
-        print("\nDisques amovibles détectés:")
-        for i, drive in enumerate(result["drives"]):
-            print(f"{i+1}. {drive['device']} ({drive['percent']:.1f}% utilisé, {drive['free_gb']:.2f} GB libre)")
-    else:
-        print(f"{Fore.YELLOW}Aucun disque amovible détecté ou accessible.{Style.RESET_ALL}")
-
-def test_buffer_overflow_simulation(detector):
-    """Tests buffer overflow simulation"""
-    print(f"\n{Fore.YELLOW}=== Simulation de dépassement de tampon ==={Style.RESET_ALL}")
-    print("Cette simulation va tenter d'allouer un tableau de grande taille en mémoire.")
-    print("Un dépassement se produira si la mémoire est insuffisante.")
-    
-    try:
-        size = int(input("Entrez la taille du tableau à allouer (essayez une grande valeur comme 100000000): "))
-        result = detector.simulate_buffer_overflow(size)
-        print(format_result(result))
-    except ValueError:
-        print(f"{Fore.RED}Entrée invalide pour la taille du tableau.{Style.RESET_ALL}")
 
 def main():
-    """Main function"""
+    """Main function to run the GUI application"""
     detector = BufferOverflowDetector()
-    
-    while True:
-        choice = get_user_input()
-        
-        if choice == 1:
-            test_character_and_string(detector)
-        elif choice == 2:
-            test_numbers(detector)
-        elif choice == 3:
-            test_arrays_and_matrices(detector)
-        elif choice == 4:
-            test_lists_and_stacks(detector)
-        elif choice == 5:
-            test_memory(detector)
-        elif choice == 6:
-            test_buffer_overflow_simulation(detector)
-        elif choice == 7:
-            print(f"\n{Fore.CYAN}Au revoir!{Style.RESET_ALL}")
-            break
-        else:
-            print(f"{Fore.RED}Option invalide. Veuillez entrer un nombre entre 1 et 7.{Style.RESET_ALL}")
-        
-        input("\nAppuyez sur Entrée pour continuer...")
+    gui = BufferOverflowDetectorGUI(detector)
+    gui.mainloop()
+
 
 if __name__ == "__main__":
     main()
